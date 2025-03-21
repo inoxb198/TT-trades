@@ -1,0 +1,309 @@
+//@version=6
+strategy("TT Strategy", overlay=true, margin_long=100, margin_short=100)
+
+timeframe_daily = input.timeframe("D", "Daily Timeframe")
+timeframe_1h = input.timeframe("60", "1-Hour Timeframe")
+timeframe_15m = input.timeframe("15", "15-Minute Timeframe")
+
+lookback_period = input.int(10, "Lookback Period for Liquidity Zones", minval=5, maxval=50)
+fvg_threshold = input.float(0.3, "Fair Value Gap Threshold (%)", minval=0.1, maxval=2.0, step=0.1)
+mss_confirmation_length = input.int(3, "Market Structure Shift Confirmation Length", minval=2, maxval=10)
+scale_in_levels = input.int(3, "Number of Scale-In Levels", minval=1, maxval=5)
+scale_out_levels = input.int(3, "Number of Scale-Out Levels", minval=1, maxval=5)
+
+risk_percent = input.float(1.0, "Risk Per Trade (%)", minval=0.1, maxval=5.0, step=0.1)
+avoid_first_hour = input.bool(true, "Avoid Trading First Hour", tooltip="Avoid trading before 10:30 AM")
+
+trade_regular_hours = input.bool(true, "Trade Only During Regular Market Hours", tooltip="Only execute trades during regular market hours (9:30 AM - 4:00 PM EST)")
+
+daily_high = request.security(syminfo.tickerid, timeframe_daily, high[1], lookahead=barmerge.lookahead_off)
+daily_low = request.security(syminfo.tickerid, timeframe_daily, low[1], lookahead=barmerge.lookahead_off)
+daily_close = request.security(syminfo.tickerid, timeframe_daily, close[1], lookahead=barmerge.lookahead_off)
+daily_open = request.security(syminfo.tickerid, timeframe_daily, open, lookahead=barmerge.lookahead_off)
+
+hourly_high = request.security(syminfo.tickerid, timeframe_1h, high[1], lookahead=barmerge.lookahead_off)
+hourly_low = request.security(syminfo.tickerid, timeframe_1h, low[1], lookahead=barmerge.lookahead_off)
+hourly_close = request.security(syminfo.tickerid, timeframe_1h, close[1], lookahead=barmerge.lookahead_off)
+hourly_open = request.security(syminfo.tickerid, timeframe_1h, open, lookahead=barmerge.lookahead_off)
+
+m15_high = request.security(syminfo.tickerid, timeframe_15m, high[1], lookahead=barmerge.lookahead_off)
+m15_low = request.security(syminfo.tickerid, timeframe_15m, low[1], lookahead=barmerge.lookahead_off)
+m15_close = request.security(syminfo.tickerid, timeframe_15m, close[1], lookahead=barmerge.lookahead_off)
+m15_open = request.security(syminfo.tickerid, timeframe_15m, open, lookahead=barmerge.lookahead_off)
+
+var float[] swing_highs = array.new_float(0)
+var float[] swing_lows = array.new_float(0)
+
+var bool new_swing_high = false
+var bool new_swing_low = false
+have_enough_data = bar_index > 5
+
+if have_enough_data
+    is_swing_high = high[2] < high[1] and high[0] < high[1] and high[3] < high[1] and high[4] < high[1]
+    is_swing_low = low[2] > low[1] and low[0] > low[1] and low[3] > low[1] and low[4] > low[1]
+    
+    if is_swing_high
+        array.push(swing_highs, high[1])
+        if array.size(swing_highs) > lookback_period
+            array.shift(swing_highs)
+    
+    if is_swing_low
+        array.push(swing_lows, low[1])
+        if array.size(swing_lows) > lookback_period
+            array.shift(swing_lows)
+            
+    new_swing_high := is_swing_high
+    new_swing_low := is_swing_low
+else
+    new_swing_high := false
+    new_swing_low := false
+plotshape(new_swing_high, "Swing High", shape.circle, location.abovebar, color.red, size=size.tiny)
+plotshape(new_swing_low, "Swing Low", shape.circle, location.belowbar, color.green, size=size.tiny)
+
+liquidity_sweep_bull = false
+liquidity_sweep_bear = false
+
+if array.size(swing_lows) > 0
+    for i = 0 to math.min(array.size(swing_lows) - 1, 3)
+        if i < array.size(swing_lows)  
+            recent_low = array.get(swing_lows, array.size(swing_lows) - 1 - i)
+            if low < recent_low and close > recent_low and close > open
+                liquidity_sweep_bull := true
+                break
+
+if array.size(swing_highs) > 0
+    for i = 0 to math.min(array.size(swing_highs) - 1, 3)
+        if i < array.size(swing_highs)  
+            recent_high = array.get(swing_highs, array.size(swing_highs) - 1 - i)
+            if high > recent_high and close < recent_high and close < open
+                liquidity_sweep_bear := true
+                break
+
+plotshape(liquidity_sweep_bull, "Bullish Liquidity Sweep", shape.triangleup, location.belowbar, color.green, size=size.small)
+plotshape(liquidity_sweep_bear, "Bearish Liquidity Sweep", shape.triangledown, location.abovebar, color.red, size=size.small)
+
+bullish_fvg = low > high[2]
+bullish_fvg_size = bullish_fvg ? low - high[2] : 0
+bullish_fvg_percent = bullish_fvg ? (bullish_fvg_size / high[2]) * 100 : 0
+valid_bullish_fvg = bullish_fvg and bullish_fvg_percent > fvg_threshold
+
+bearish_fvg = high < low[2]
+bearish_fvg_size = bearish_fvg ? low[2] - high : 0
+bearish_fvg_percent = bearish_fvg ? (bearish_fvg_size / low[2]) * 100 : 0
+valid_bearish_fvg = bearish_fvg and bearish_fvg_percent > fvg_threshold
+
+bullish_fvg_top = valid_bullish_fvg ? low : na
+bullish_fvg_bottom = valid_bullish_fvg ? high[2] : na
+bearish_fvg_top = valid_bearish_fvg ? low[2] : na
+bearish_fvg_bottom = valid_bearish_fvg ? high : na
+
+bgcolor(valid_bullish_fvg ? color.new(color.green, 90) : na)
+bgcolor(valid_bearish_fvg ? color.new(color.red, 90) : na)
+
+var bool bullish_trend = false
+var bool bearish_trend = false
+var int consecutive_bullish_bars = 0
+var int consecutive_bearish_bars = 0
+
+bullish_engulfing = (close > open) and (close > high[1]) and (open < low[1]) and (close - open) > (high[1] - low[1]) * 0.8
+
+bearish_engulfing = (close < open) and (close < low[1]) and (open > high[1]) and (open - close) > (high[1] - low[1]) * 0.8
+
+if close > open
+    consecutive_bullish_bars := consecutive_bullish_bars + 1
+    consecutive_bearish_bars := 0
+else
+    consecutive_bearish_bars := consecutive_bearish_bars + 1
+    consecutive_bullish_bars := 0
+
+bullish_mss = bullish_engulfing or (consecutive_bullish_bars >= mss_confirmation_length and not bullish_trend)
+bearish_mss = bearish_engulfing or (consecutive_bearish_bars >= mss_confirmation_length and not bearish_trend)
+
+if bullish_mss
+    bullish_trend := true
+    bearish_trend := false
+    
+if bearish_mss
+    bearish_trend := true
+    bullish_trend := false
+
+plotshape(bullish_mss, "Bullish MSS", shape.arrowup, location.belowbar, color.green, size=size.normal)
+plotshape(bearish_mss, "Bearish MSS", shape.arrowdown, location.abovebar, color.red, size=size.normal)
+
+is_trading_hour = true
+if avoid_first_hour
+    is_trading_hour := not (hour == 9 and minute < 30)
+
+is_regular_market_hours() =>
+    regular_session = not (session.ispremarket or session.ispostmarket)
+    in_trading_hours = true
+    
+    if trade_regular_hours
+        in_trading_hours := regular_session and (hour >= 9 and hour <= 16) and not (hour == 9 and minute < 30) and not (hour == 16 and minute > 0)
+    
+    in_trading_hours
+
+is_trading_time = is_regular_market_hours() and is_trading_hour
+
+long_entry = liquidity_sweep_bull and valid_bullish_fvg and bullish_mss and is_trading_time
+short_entry = liquidity_sweep_bear and valid_bearish_fvg and bearish_mss and is_trading_time
+
+atr_value = ta.atr(14)
+price_level = close
+
+long_stop = low - atr_value * 1.5
+short_stop = high + atr_value * 1.5
+
+account_size = strategy.equity
+risk_amount = account_size * (risk_percent / 100)
+long_pos_size = risk_amount / (price_level - long_stop)
+short_pos_size = risk_amount / (short_stop - price_level)
+
+var int long_scale_count = 0
+var int short_scale_count = 0
+var float avg_long_price = 0.0
+var float avg_short_price = 0.0
+var float total_long_size = 0.0
+var float total_short_size = 0.0
+
+var float[] long_targets = array.new_float(0)
+var float[] short_targets = array.new_float(0)
+var float[] long_exit_sizes = array.new_float(0)
+var float[] short_exit_sizes = array.new_float(0)
+
+var bool scale_in_long = false
+var bool scale_in_short = false
+var bool[] scale_out_long_flags = array.new_bool(scale_out_levels, false)
+var bool[] scale_out_short_flags = array.new_bool(scale_out_levels, false)
+
+if long_entry and long_scale_count == 0
+    array.clear(long_targets)
+    array.clear(long_exit_sizes)
+    
+    for i = 1 to scale_out_levels
+        target_price = price_level + (atr_value * 2 * i)
+        array.push(long_targets, target_price)
+        exit_size = long_pos_size / scale_out_levels
+        array.push(long_exit_sizes, exit_size)
+        array.set(scale_out_long_flags, i-1, false)
+
+if short_entry and short_scale_count == 0
+    array.clear(short_targets)
+    array.clear(short_exit_sizes)
+    
+    for i = 1 to scale_out_levels
+        target_price = price_level - (atr_value * 2 * i)
+        array.push(short_targets, target_price)
+        exit_size = short_pos_size / scale_out_levels
+        array.push(short_exit_sizes, exit_size)
+        array.set(scale_out_short_flags, i-1, false)
+
+if long_entry and long_scale_count < scale_in_levels
+    entry_size = long_pos_size / scale_in_levels
+    strategy.entry("Long_" + str.tostring(long_scale_count), strategy.long, qty=entry_size)
+    
+    total_long_size := total_long_size + entry_size
+    avg_long_price := ((avg_long_price * (total_long_size - entry_size)) + (price_level * entry_size)) / total_long_size
+    
+    long_scale_count := long_scale_count + 1
+    scale_in_long := true
+else
+    scale_in_long := false
+
+if short_entry and short_scale_count < scale_in_levels
+    entry_size = short_pos_size / scale_in_levels
+    strategy.entry("Short_" + str.tostring(short_scale_count), strategy.short, qty=entry_size)
+    
+    total_short_size := total_short_size + entry_size
+    avg_short_price := ((avg_short_price * (total_short_size - entry_size)) + (price_level * entry_size)) / total_short_size
+    
+    short_scale_count := short_scale_count + 1
+    scale_in_short := true
+else
+    scale_in_short := false
+
+if array.size(long_targets) > 0 and array.size(long_exit_sizes) > 0
+    for i = 0 to array.size(long_targets) - 1
+        if i < array.size(long_targets) and i < array.size(long_exit_sizes)  
+            target_level = array.get(long_targets, i)
+            exit_size = array.get(long_exit_sizes, i)
+            if high >= target_level and exit_size > 0
+                exit_qty = math.round(exit_size)
+                if exit_qty > 0 and i % scale_in_levels < scale_in_levels  
+                    strategy.close("Long_" + str.tostring(i % scale_in_levels), qty=exit_qty, comment="TP_" + str.tostring(i+1))
+                    array.set(long_exit_sizes, i, 0)
+                    array.set(scale_out_long_flags, i, true)
+
+
+if array.size(short_targets) > 0 and array.size(short_exit_sizes) > 0
+    for i = 0 to array.size(short_targets) - 1
+        if i < array.size(short_targets) and i < array.size(short_exit_sizes)  
+            target_level = array.get(short_targets, i)
+            exit_size = array.get(short_exit_sizes, i)
+            if low <= target_level and exit_size > 0
+                exit_qty = math.round(exit_size)
+                if exit_qty > 0 and i % scale_in_levels < scale_in_levels  
+                    strategy.close("Short_" + str.tostring(i % scale_in_levels), qty=exit_qty, comment="TP_" + str.tostring(i+1))
+                    array.set(short_exit_sizes, i, 0)
+                    array.set(scale_out_short_flags, i, true)
+
+
+plotshape(scale_in_long, "Long Scale-In", shape.diamond, location.belowbar, color.new(color.green, 0), size=size.small, text="In")
+plotshape(scale_in_short, "Short Scale-In", shape.diamond, location.abovebar, color.new(color.red, 0), size=size.small, text="In")
+
+
+plotshape(array.get(scale_out_long_flags, 0) and barstate.isconfirmed, "Long TP 1", shape.diamond, location.abovebar, color.new(color.green, 0), size=size.small, text="TP1")
+plotshape(array.get(scale_out_long_flags, 1) and barstate.isconfirmed, "Long TP 2", shape.diamond, location.abovebar, color.new(color.green, 0), size=size.small, text="TP2")
+plotshape(array.get(scale_out_long_flags, 2) and barstate.isconfirmed, "Long TP 3", shape.diamond, location.abovebar, color.new(color.green, 0), size=size.small, text="TP3")
+
+plotshape(array.get(scale_out_short_flags, 0) and barstate.isconfirmed, "Short TP 1", shape.diamond, location.belowbar, color.new(color.red, 0), size=size.small, text="TP1")
+plotshape(array.get(scale_out_short_flags, 1) and barstate.isconfirmed, "Short TP 2", shape.diamond, location.belowbar, color.new(color.red, 0), size=size.small, text="TP2")
+plotshape(array.get(scale_out_short_flags, 2) and barstate.isconfirmed, "Short TP 3", shape.diamond, location.belowbar, color.new(color.red, 0), size=size.small, text="TP3")
+
+if barstate.isconfirmed
+    for i = 0 to scale_out_levels - 1
+        if i < array.size(scale_out_long_flags) and array.get(scale_out_long_flags, i)
+            array.set(scale_out_long_flags, i, false)
+        if i < array.size(scale_out_short_flags) and array.get(scale_out_short_flags, i)
+            array.set(scale_out_short_flags, i, false)
+
+if long_scale_count > 0
+    strategy.exit("Long_SL", "Long", stop=long_stop)
+
+if short_scale_count > 0
+    strategy.exit("Short_SL", "Short", stop=short_stop)
+
+if bearish_mss and long_scale_count > 0
+    long_scale_count := 0
+    total_long_size := 0.0
+    avg_long_price := 0.0
+    strategy.close_all("Long_Trend_Change")
+    
+if bullish_mss and short_scale_count > 0
+    short_scale_count := 0
+    total_short_size := 0.0
+    avg_short_price := 0.0
+    strategy.close_all("Short_Trend_Change")
+
+
+plot(daily_high, "Daily High", color.rgb(255, 165, 0, 50), linewidth=2, style=plot.style_line)
+plot(daily_low, "Daily Low", color.rgb(255, 165, 0, 50), linewidth=2, style=plot.style_line)
+plot(hourly_high, "Hourly High", color.rgb(0, 128, 255, 50), linewidth=1, style=plot.style_line)
+plot(hourly_low, "Hourly Low", color.rgb(0, 128, 255, 50), linewidth=1, style=plot.style_line)
+
+
+var table info_table = table.new(position.top_right, 5, 5, color.black, color.white, 2, color.white, 1)
+if barstate.islastconfirmedhistory
+    table.cell(info_table, 0, 0, "Liquidity Sweep Strategy", bgcolor=color.rgb(0, 0, 0), text_color=color.white)
+    table.cell(info_table, 0, 1, "Trend: " + (bullish_trend ? "Bullish" : bearish_trend ? "Bearish" : "Neutral"), 
+              bgcolor=bullish_trend ? color.green : bearish_trend ? color.red : color.gray, 
+              text_color=color.white)
+    table.cell(info_table, 0, 2, "FVG Found: " + (valid_bullish_fvg ? "Bullish" : valid_bearish_fvg ? "Bearish" : "None"), 
+              bgcolor=valid_bullish_fvg ? color.green : valid_bearish_fvg ? color.red : color.gray, 
+              text_color=color.white)
+    table.cell(info_table, 0, 3, "MSS Detected: " + (bullish_mss ? "Bullish" : bearish_mss ? "Bearish" : "None"), 
+              bgcolor=bullish_mss ? color.green : bearish_mss ? color.red : color.gray, 
+              text_color=color.white)
+    table.cell(info_table, 0, 4, "Liquidity Sweep: " + (liquidity_sweep_bull ? "Bullish" : liquidity_sweep_bear ? "Bearish" : "None"), 
+              bgcolor=liquidity_sweep_bull ? color.green : liquidity_sweep_bear ? color.red : color.gray, 
+              text_color=color.white)
