@@ -1,0 +1,144 @@
+Here's a prompt designed for a Claude instance with repo access — structured so it explores the actual code rather than describing generic LightGBM:
+
+---
+
+**Prompt:**
+
+> I'm an intern learning how we implement LightGBM here. I need you to explore the actual codebase (not describe LightGBM in general) and produce a rigorous internal-implementation writeup. Please:
+>
+> 1. **Locate the relevant code**: Find where we train, wrap, or serve LightGBM models — search for imports of `lightgbm`, custom `Booster`/`Dataset` subclasses, config files (`.yaml`/`.json` hyperparameter configs), and any internal wrapper library/package name. List the file paths you find before summarizing anything.
+>
+> 2. **Data pipeline**: Trace exactly what data goes into training — the feature engineering code, how the `Dataset` object is constructed (raw arrays vs. binned data, categorical feature declarations, weight/group arguments), and any internal feature store or preprocessing step feeding it.
+>
+> 3. **Objective/loss**: Check whether we use a built-in objective (`binary`, `multiclass`, `regression`, etc.) or a **custom objective function** — if custom, show me the actual gradient/hessian code and explain the math it implements.
+>
+> 4. **Training config**: Pull the actual hyperparameters used in production configs (`num_leaves`, `max_depth`, `learning_rate`, `feature_fraction`, `bagging_fraction`, `min_data_in_leaf`, categorical handling flags, GOSS/EFB settings if set explicitly) and explain what each is tuned to do here specifically.
+>
+> 5. **Training loop mechanics**: How is the model actually fit — `lgb.train`, `sklearn` API, distributed/Dask, early stopping logic, cross-validation or walk-forward validation scheme used.
+>
+> 6. **Calibration/post-processing**: Is there any wrapper around raw LightGBM outputs (isotonic calibration, stacking, ensembling, monotonic constraints) applied on top? Show that code.
+>
+> 7. **Serving/inference**: How is the trained model serialized and loaded for inference — native `Booster.save_model`, ONNX conversion, or something custom — and any latency-driven implementation choices (e.g. `predict_disable_shape_check`, tree compilation, `num_threads` settings).
+>
+> 8. **Deviations from vanilla LightGBM**: Explicitly flag anywhere our code patches, monkeypatches, or forks the LightGBM library itself, or works around a known LightGBM limitation.
+>
+> Cite file paths and line numbers for every claim. Where the code is unclear or you're inferring intent, say so explicitly rather than guessing.
+
+---
+
+Adjust the numbered sections based on what's actually in scope for your team (e.g. drop serving/inference if you're purely on the research side). Want me to trim this down to a shorter version focused on just training + objective, in case the repo is large and you want a faster first pass?
+
+
+
+Here's an adapted version targeting that specific classification scheme:
+
+---
+
+**Prompt:**
+
+> I'm an intern learning how we classify trades into the T100/T75/T50/T25/T0 tiers here. I need you to explore the actual codebase (not describe a generic classification system) and produce a rigorous internal-implementation writeup. Please:
+>
+> 1. **Locate the relevant code**: Search for the T100/T75/T50/T25/T0 labels directly (as strings, enums, or constants) across the codebase, along with any module names referencing "trade classification," "trade tiering," "fill quality," or similar. List every file path you find before summarizing anything.
+>
+> 2. **Definition of the tiers**: Find where each tier is actually defined — is this based on fill rate, execution quality, price improvement, venue routing outcome, some confidence/probability score, or something else entirely? Show the exact logic (thresholds, formulas, conditionals) that assigns a trade to T100 vs T75 vs T50 vs T25 vs T0.
+>
+> 3. **Input data**: Trace what data feeds the classification — trade/order events, market data snapshots, venue acknowledgments, timestamps — and how it's joined or aggregated before the classification step.
+>
+> 4. **Model or rules-based?**: Determine whether this classification is a hardcoded rules engine (if/else thresholds) or a trained model (e.g. LightGBM, logistic regression) outputting a score that's then bucketed into these five tiers. If it's model-based, show the training code, features, and the bucketing/threshold logic applied to the model's output.
+>
+> 5. **Where it's used downstream**: Find what consumes these tier labels — reporting, TCA (transaction cost analysis), risk systems, strategy feedback loops — and how.
+>
+> 6. **Historical changes**: Check version history/git blame on the relevant files for when thresholds or definitions changed, and any comments/PR descriptions explaining why.
+>
+> 7. **Edge cases**: Identify how the code handles ambiguous cases — partial fills, cancels, rejects — and which tier (if any) they fall into.
+>
+> Cite file paths and line numbers for every claim. Where the code is unclear or you're inferring intent, say so explicitly rather than guessing.
+
+---
+
+Want me to adjust this if T100/T75/etc. actually refers to something else in your firm's vocabulary (e.g., position sizing tiers or confidence bands rather than trade/fill classification)?
+
+
+Here's the adapted version for options/stock theoretical pricing:
+
+---
+
+**Prompt:**
+
+> I'm an intern learning how we compute theoretical prices for options and stocks here. I need you to explore the actual codebase (not describe generic option pricing theory) and produce a rigorous internal-implementation writeup. Please:
+>
+> 1. **Locate the relevant code**: Search for pricing modules — terms like "theo," "theoretical price," "fair value," "pricer," "Black-Scholes," "binomial," "BSM," or ticker/instrument-keyed pricing services. List every file path you find before summarizing anything.
+>
+> 2. **Pricing model(s) used**: Identify which model(s) are actually implemented — Black-Scholes-Merton, binomial/trinomial trees, local vol, stochastic vol (Heston/SABR), or a proprietary variant — and show the exact formulas as coded, not textbook versions. Flag any approximations, closed-form shortcuts, or numerical methods (finite difference, Monte Carlo) used instead of analytic solutions.
+>
+> 3. **Inputs and data sources**: Trace where each input comes from — spot price feed, interest rate curve, dividend schedule/yield, implied or historical volatility surface, time-to-expiry calculation (calendar days vs. trading days), and how each is sourced, cached, or interpolated.
+>
+> 4. **Volatility surface construction**: If implied vol is used, find how the surface is built — SVI, SABR, spline interpolation, sticky-strike vs. sticky-delta conventions — and how it's queried for a given strike/expiry.
+>
+> 5. **Greeks computation**: Show how delta, gamma, vega, theta, rho (and any higher-order or cross Greeks) are computed — analytic formulas, finite-difference bumps, or automatic differentiation — and where they're used downstream (hedging, risk limits).
+>
+> 6. **Stock theoretical price**: Separately, find how a "theoretical" (fair value) price for the underlying stock itself is computed if this exists — e.g., using futures/forward parity, cost-of-carry, or a fair value model tied to index/ETF arbitrage.
+>
+> 7. **Update frequency and triggers**: Determine how often theos are recomputed — on every tick, on a timer, on market data change thresholds — and any caching/staleness logic.
+>
+> 8. **Where it's used downstream**: Find what consumes these theoretical prices — quoting engines, risk systems, P&L attribution, edge/alpha calculations.
+>
+> 9. **Deviations from textbook models**: Explicitly flag any place the code diverges from standard financial theory for practical reasons (e.g., vol surface smoothing hacks, discrete dividend handling, early-exercise approximations for American options).
+>
+> Cite file paths and line numbers for every claim. Where the code is unclear or you're inferring intent, say so explicitly rather than guessing.
+
+---
+
+Want me to combine all three of these (LightGBM, trade tiering, options pricing) into one master onboarding doc you send in sequence, or keep them separate?
+
+
+
+Here's the standalone Flamingo prompt:
+
+---
+
+**Prompt:**
+
+> I'm an intern working with the flow desk, and my manager has asked me to learn how we implement the Flamingo algorithm. I need you to explore the actual codebase (not describe generic concepts) and produce a rigorous internal-implementation writeup. Please:
+>
+> 1. **Locate the code**: Search for "Flamingo" across the codebase — module names, class names, config keys, strategy registries. List every file path found before summarizing anything.
+>
+> 2. **Classify the algo**: Identify what kind of algo this is (execution algo, market-making, arbitrage, signal-based, hedging) based on its actual logic, not the name.
+>
+> 3. **Core logic**: Trace the algorithm end to end — entry/exit conditions, order sizing logic, venue/routing decisions, any signal or model inputs it consumes, and how it decides to place, modify, or cancel orders.
+>
+> 4. **Parameters/config**: Pull the actual parameters used in production (rate limits, participation rate, aggression/urgency settings, price/size bands, any other tunables) and explain what each one controls and how it's set.
+>
+> 5. **Inputs and data feeds**: Trace what market data or internal signals feed into Flamingo's decisions — order book data, trade prints, internal alpha signals, risk limits — and how they're consumed.
+>
+> 6. **Where it sits in the stack**: Identify what triggers Flamingo (manual invocation, parent order routing, scheduler), and what it hands off to downstream (execution venue, OMS, risk checks).
+>
+> 7. **Version history**: Check git blame/commit history on the relevant files for major logic changes, and any comments or PR descriptions explaining why.
+>
+> Cite file paths and line numbers for every claim. Where the code is unclear or you're inferring intent, say so explicitly rather than guessing — don't fill gaps with generic trading-algo assumptions.
+
+
+
+Here's the standalone prompt for decay life:
+
+---
+
+**Prompt:**
+
+> I'm an intern working with the flow desk, and my manager has asked me to learn how we implement decay life in our trading systems. I need you to explore the actual codebase (not describe generic concepts) and produce a rigorous internal-implementation writeup. Please:
+>
+> 1. **Locate the code**: Search for "decay," "decay life," "decay_factor," "half_life," "staleness," or similar terms across the codebase — module names, class names, config keys. List every file path found before summarizing anything.
+>
+> 2. **Identify what decays**: Determine exactly what this decay applies to — signal strength, order aggression, quote validity/staleness, position sizing, or something else — and whether it's a shared utility used across multiple algos or specific to one.
+>
+> 3. **Decay function**: Show the exact mathematical form as implemented — exponential decay, linear decay, step-function decay, half-life parameterization — with the actual formula and constants/parameters used in production, not textbook defaults.
+>
+> 4. **Trigger and reset conditions**: Trace what starts the decay timer/counter, what can reset or pause it, and whether it's time-based, event-based, or tick-based.
+>
+> 5. **Threshold behavior**: Find what happens when decay reaches its threshold — does it trigger a re-quote, cancel, resize, strategy hand-off, or alert? Show the exact conditional logic.
+>
+> 6. **Config and tuning**: Pull the actual parameters (decay rate, half-life, thresholds) used in production configs, and note if these differ across instruments, venues, or time-of-day.
+>
+> 7. **Version history**: Check git blame/commit history for when decay parameters or logic last changed, and any comments/PR descriptions explaining why.
+>
+> Cite file paths and line numbers for every claim. Where the code is unclear or you're inferring intent, say so explicitly rather than guessing.
