@@ -1,85 +1,101 @@
-You are given a trained machine learning model and the corresponding training data. Your task is to analyze the model and produce three outputs:
+Here's the full set, each rebuilt with recursive definition-following and mathematical justification baked in.
 
-1. **Feature importance using SHAP values**
-2. **Feature importance using split/gain importance**
-3. **A JSON file that captures the exact decision boundaries learned by the model**
+---
 
-### Requirements
+**1. LightGBM**
 
-* Compute **global SHAP importance** for every feature.
-* Compute **gain-based importance** for every feature.
-* If the model is tree-based (XGBoost, LightGBM, CatBoost, Random Forest, Decision Tree, or any boosted tree model), extract the **exact split thresholds** used in every tree and export them to JSON.
-* For each tree, include:
+> I'm an intern learning how we implement LightGBM here. Explore the actual codebase (not generic LightGBM theory) and produce an exhaustive internal-implementation writeup. Requirements:
+>
+> - **Locate everything**: Find every file touching LightGBM — training, wrapping, serving, custom objectives, config. List all file paths first.
+> - **Recursive definition rule**: For every function, class, or config value you reference, paste its actual code. If that code calls another internal function/class/constant, paste *that* definition too — and keep recursing until every symbol used is either a standard library call, a raw LightGBM API call, or fully defined in front of me. Do not summarize a referenced function without showing it.
+> - **Data pipeline**: Show the exact code building the `Dataset` (features, categorical flags, weights), and recursively define every upstream function that produces those features.
+> - **Objective/loss**: If custom, show the gradient/hessian function verbatim, then derive the underlying math it implements (loss function, its first and second derivatives, and why those specific derivatives are correct for that loss).
+> - **Training config**: Pull actual hyperparameters from production configs. For each one, give the mathematical role it plays (e.g. `num_leaves` bounding model complexity, `lambda_l2` as the ridge penalty term in the split-gain formula) and justify why that value was likely chosen given the objective.
+> - **Training loop, calibration, serving**: Same recursive rule — show the code, define every nested call, then explain the math/statistics behind any calibration or post-processing step (e.g. isotonic regression: show the code, then derive what isotonic regression is solving).
+> - **Deviations from vanilla LightGBM**: Flag every monkeypatch/fork, show the diff, and explain mathematically what changed vs. the standard algorithm.
+>
+> Cite file paths and line numbers for every claim. Never assert a definition without showing its code. Never assume standard behavior without checking — if you can't find something, say so explicitly rather than filling the gap with textbook LightGBM behavior.
 
-  * tree index
-  * split feature
-  * split threshold
-  * left child / right child structure
-  * leaf values
-  * any path rules from root to leaf
-* If the model is not tree-based, explicitly say that exact decision boundaries cannot be recovered analytically and instead provide the closest interpretable approximation.
-* Rank features by:
+---
 
-  * mean absolute SHAP value
-  * gain importance
-* Return the results in a clean, structured format.
-* Save the decision boundary output as `decision_boundaries.json`.
+**2. T100/T75/T50/T25/T0 (trade classification)**
 
-### Output format
+> I'm an intern learning how we classify trades into T100/T75/T50/T25/T0. Explore the actual codebase and produce an exhaustive internal-implementation writeup. Requirements:
+>
+> - **Locate everything**: Find every reference to these tier labels (strings, enums, constants) and every module computing them. List all file paths first.
+> - **Recursive definition rule**: Show the exact code that assigns a trade to a tier. If it calls another function (e.g. a fill-rate calculator, a scoring model, a threshold lookup), paste that function's code too, and keep recursing — including any model inference call, feature computation, or config lookup — until every symbol is fully defined or is a raw library/data call.
+> - **Tier definitions**: For each of T100/T75/T50/T25/T0, show the exact threshold or condition in code, then state the mathematical/statistical meaning of that threshold (e.g. "T75 = fills where realized slippage is within X bps of arrival price, i.e. P(fill price − arrival price| ≤ X)").
+> - **If model-based**: recursively show the trained model's feature pipeline, the model's objective function, and derive the math of how its output score is mapped to the five discrete tiers (bucketing logic, cutoffs, and why those cutoffs — calibrated to quantiles, fixed bps bands, etc.).
+> - **Input data**: Recursively trace every upstream data source/join feeding the classification, showing the code for each transformation.
+> - **Downstream consumers**: Show the code that reads these tier labels (TCA, reporting, risk) and define any aggregation math applied to them (e.g. how tier distribution feeds into a desk-level quality score).
+> - **History**: Pull git blame on threshold changes and quote the reasoning from commit messages/PRs if present.
+>
+> Cite file paths and line numbers for every claim. Never assert a definition without showing its code. Flag anything inferred rather than confirmed.
 
-Return:
+---
 
-1. A concise explanation of the method used
-2. A table of feature importance from SHAP
-3. A table of gain importance
-4. The JSON structure for the learned boundaries
+**3. Theoretical price (options and stock)**
 
-### JSON schema
+> I'm an intern learning how we compute theoretical prices for options and stocks. Explore the actual codebase and produce an exhaustive internal-implementation writeup. Requirements:
+>
+> - **Locate everything**: Find every pricing module (theo, fair value, pricer, vol surface, Greeks). List all file paths first.
+> - **Recursive definition rule**: Show the exact pricing function as coded. If it calls a vol surface lookup, a rate curve interpolator, a dividend model, or any helper, paste that function's code too, and keep recursing through every nested call — down to raw data lookups — before treating anything as "defined."
+> - **Pricing model**: Once the full formula is assembled from code, derive it mathematically from first principles (e.g. Black-Scholes PDE → closed form, or the discretization scheme if it's a tree/finite-difference/Monte Carlo model) and show exactly where the code's implementation matches or departs from the textbook derivation.
+> - **Vol surface**: Recursively show how the surface is built (interpolation/parameterization method — SVI, SABR, spline) including the fitting code, then derive the math of that parameterization and why it's arbitrage-free (or isn't, and how that's handled).
+> - **Inputs**: Recursively trace spot, rate curve, dividend schedule, and time-to-expiry calculations back to their raw data sources, showing every transformation function.
+> - **Greeks**: Show the exact Greeks code (analytic formula, finite-difference bump, or autodiff), derive the closed-form Greek mathematically, and note whether the code's version is exact or an approximation.
+> - **Stock theo**: Same recursive treatment for any fair-value/forward-parity/cost-of-carry logic for the underlying.
+> - **Update/staleness logic and downstream use**: Show the exact triggering code and what consumes the theo price.
+> - **Deviations from textbook theory**: Explicitly flag and mathematically explain every approximation or hack (discrete dividends, early-exercise approximation, smoothing).
+>
+> Cite file paths and line numbers for every claim. Never assert a definition without showing its code. Flag anything inferred rather than confirmed.
 
-```json
-{
-  "model_type": "",
-  "n_trees": 0,
-  "feature_names": [],
-  "feature_importance": {
-    "shap": [
-      {"feature": "", "mean_abs_shap": 0.0}
-    ],
-    "gain": [
-      {"feature": "", "gain": 0.0}
-    ]
-  },
-  "trees": [
-    {
-      "tree_id": 0,
-      "nodes": [
-        {
-          "node_id": 0,
-          "feature": "",
-          "threshold": 0.0,
-          "operator": "<=",
-          "left_child": 1,
-          "right_child": 2,
-          "is_leaf": false,
-          "leaf_value": null
-        }
-      ],
-      "leaf_paths": [
-        {
-          "path": [
-            {"feature": "", "operator": "<=", "threshold": 0.0}
-          ],
-          "prediction": 0.0
-        }
-      ]
-    }
-  ]
-}
-```
+---
 
-### Notes
+**4. Flamingo algorithm**
 
-* Use exact thresholds from the model, not approximations.
-* Include all features, even those with zero importance.
-* Make the output deterministic and reproducible.
-* If needed, generate code in Python to perform the full extraction and save the JSON file.
+> I'm an intern working with the flow desk learning how we implement the Flamingo algorithm. Explore the actual codebase and produce an exhaustive internal-implementation writeup. Requirements:
+>
+> - **Locate everything**: Search for "Flamingo" across module names, classes, configs, strategy registries. List all file paths first.
+> - **Recursive definition rule**: Show Flamingo's core logic as code. Every function it calls (sizing logic, routing logic, signal generation, risk checks) must be pasted in full, and every function *those* call must also be pasted, recursively, until you reach raw data/library calls or hard-coded constants. Do not describe a called function without showing it.
+> - **Classification**: State what kind of algo this is based on the fully-expanded logic (execution, market-making, arbitrage, hedging), not the name.
+> - **Quantitative logic**: Wherever the algo computes a score, threshold, or sizing decision using a formula (not just an if/else), state the formula explicitly and justify it — what is it approximating or optimizing for (e.g. minimizing market impact, maximizing fill probability)?
+> - **Parameters**: Pull every actual production parameter value, and for each explain its mathematical role in the logic above (not just "controls aggression" — show how it enters the formula/conditional).
+> - **Inputs**: Recursively trace every data/signal feed into the algo back to its source.
+> - **Position in stack**: Show what invokes Flamingo and what it hands off to, with code.
+> - **History**: Pull git blame/commit messages for major logic changes.
+>
+> Cite file paths and line numbers for every claim. Never assert a definition without showing its code. Flag anything inferred rather than confirmed — don't fill gaps with generic trading-algo assumptions.
+
+---
+
+**5. Decay life**
+
+> I'm an intern working with the flow desk learning how we implement decay life. Explore the actual codebase and produce an exhaustive internal-implementation writeup. Requirements:
+>
+> - **Locate everything**: Search for "decay," "decay_life," "half_life," "staleness," "decay_factor" across modules/classes/configs. List all file paths first.
+> - **Recursive definition rule**: Show the exact decay function/class as code. If it's called from or calls into another module (e.g. a timer service, an event bus, a re-quote handler), paste that code too, recursively, until everything traces to raw data or library primitives.
+> - **What decays**: Determine precisely what quantity decays (signal weight, order aggression, quote validity, position sizing) from the fully-expanded code, not assumption.
+> - **Mathematical form**: State the exact decay function (e.g. `w(t) = w0 * exp(-λt)` or linear/step form) as implemented, derive its properties (e.g. half-life = ln(2)/λ), and justify why that functional form fits the use case (e.g. exponential decay models a memoryless staleness assumption — state whether that assumption is explicit or implicit in the code).
+> - **Trigger/reset logic**: Show the exact code for what starts, pauses, or resets the decay timer/counter, including any event handlers, recursively defined.
+> - **Threshold behavior**: Show the exact conditional and downstream action (re-quote, cancel, resize, hand-off) once decay crosses threshold.
+> - **Parameters**: Pull actual production values (decay rate, half-life, thresholds) and whether they vary by instrument/venue/time-of-day, with code showing that variation logic.
+> - **History**: Pull git blame/commit messages for parameter or logic changes and quoted reasoning if present.
+>
+> Cite file paths and line numbers for every claim. Never assert a definition without showing its code. Flag anything inferred rather than confirmed.
+
+---
+
+**6. 9:15am auction**
+
+> I'm an intern working with the flow desk learning how we handle the 9:15am auction. Explore the actual codebase and produce an exhaustive internal-implementation writeup. Requirements:
+>
+> - **Locate everything**: Search for "9:15," "pre-open," "opening auction," "call auction," or the literal time string, across modules/classes/configs/schedulers. List all file paths first.
+> - **Recursive definition rule**: Show the exact scheduling and handling code for this window. Every function it calls (order staging, price discovery, algo suppression/activation logic) must be pasted in full and recursively expanded until every symbol is defined down to raw data/library calls.
+> - **Mechanics**: From the fully-expanded code, explain exactly what happens in three phases — order collection before 9:15, the call-auction matching logic (if computed internally rather than just received from the exchange), and post-auction transition to continuous trading.
+> - **Equilibrium/opening price logic**: If any internal code computes or reacts to the auction-determined price (e.g. estimating the likely equilibrium price pre-auction), show that code, derive the underlying math (e.g. maximum-volume matching principle used by NSE/BSE call auctions), and justify why that approach is used.
+> - **Algo behavior changes**: Recursively show how other systems (e.g. Flamingo) check for/respond to the 9:15 window — config flags, time-based conditionals — with full code.
+> - **Parameters/config**: Pull actual timing/threshold values used (e.g. staging cutoff times, price band limits) and explain their purpose.
+> - **History**: Pull git blame/commit messages for changes to auction-handling logic.
+>
+> Cite file paths and line numbers for every claim. Never assert a definition without showing its code. Flag anything inferred rather than confirmed — don't fill gaps with generic auction-mechanics assumptions.
